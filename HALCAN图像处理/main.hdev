@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hdevelop file_version="1.2" halcon_version="21.11.0.0">
+<procedure name="main">
+<interface/>
+<body>
+<l>dev_close_window ()</l>
+<l>dev_update_off ()</l>
+<l>read_image (Image2, '../数据集/Test2.jpg')</l>
+<l>get_image_size (Image2, Width, Height)</l>
+<l>dev_open_window (0, 0, Width/4, Height/4, 'black', WindowHandle)</l>
+<l>set_display_font (WindowHandle, 16, 'mono', 'true', 'false')</l>
+<c></c>
+<l>median_image (Image2, ImageMedian, 'circle', 1, 'mirrored')</l>
+<c>*中值滤波</c>
+<c></c>
+<l>MaskSize := 7</l>
+<l>gray_erosion_rect (ImageMedian, ImageErosion, MaskSize, MaskSize)</l>
+<c></c>
+<l>sub_image (ImageMedian, ImageErosion, ImageDifference, 1, 0)</l>
+<l>emphasize (ImageDifference, ImageDiffEmphasize, 7, 7, 1.5)</l>
+<l>threshold (ImageDiffEmphasize, EdgeRegionPixel, 30, 255)</l>
+<l>closing_circle (EdgeRegionPixel, RegionClosing, 3.5)</l>
+<l>fill_up (RegionClosing, RegionFillUp)</l>
+<c>* ==========================================================</c>
+<c>* 新增：形态学断开粘连 (打断错误连接)</c>
+<c>* ==========================================================</c>
+<c>* 1. 设定腐蚀半径。这个值需要大于粘连“桥梁”的一半宽度。</c>
+<c>* 建议从 5 开始调试，如果还没断开就加大，比如 10.5 或 15.5</c>
+<l>BreakRadius := 8.5</l>
+<l>erosion_circle (RegionFillUp, RegionErosion, BreakRadius)</l>
+<c></c>
+<c>* 2. 重新连通：此时原本粘连的区域应该已经各自独立了</c>
+<l>connection (RegionErosion, ConnectedRegions)</l>
+<c></c>
+<c>* 3. 双重特征筛选：面积 + 矩形度 (极其关键的优化)</c>
+<c>* 矩形度越接近 1，说明越像一个标准的矩形。通常快递单的矩形度在 0.7 以上。</c>
+<c>* 这样可以完美过滤掉那些虽然面积够大，但是形状奇形怪状的废块。</c>
+<l>select_shape (ConnectedRegions, SelectedRegions1, 'area', 'and', 298387, 1.26114e+06)</l>
+<c></c>
+<c></c>
+<c>* 4. 膨胀恢复：将筛选出的正确区域恢复其真实大小</c>
+<l>dilation_circle (SelectedRegions1, RegionDilation, BreakRadius)</l>
+<c></c>
+<l>area_center (ConnectedRegions, AreaTuple, RowCenter, ColumnCenter)</l>
+<c></c>
+<c>* ==========================================================</c>
+<l>get_domain (Image2, ImageDomain)</l>
+<c></c>
+<c>* 后续的拟合与显示</c>
+<c>* ==========================================================</c>
+<c>* 注意：这里要使用恢复大小后的 RegionDilation 进行合并与拟合</c>
+<l>union1 (RegionDilation, RegionUnion)</l>
+<l>smallest_rectangle2 (RegionUnion, Row, Column, Phi, Length1, Length2)</l>
+<c></c>
+<c>* 根据计算出的参数，生成一个真实的矩形区域</c>
+<l>gen_rectangle2 (BoundingBox, Row, Column, Phi, Length1, Length2)</l>
+<c></c>
+<c>* 可视化查看效果</c>
+<l>dev_set_color ('green')</l>
+<l>dev_set_draw ('margin')</l>
+<l>dev_display (Image2)</l>
+<l>dev_display (BoundingBox)</l>
+<c>*picture 9 or 1</c>
+<l>reduce_domain (Image2, BoundingBox, ImageReduced)</l>
+<c></c>
+<c>*————————————————————————————————————————————————————————————————————</c>
+<c>*------------------------------------------------------</c>
+<c></c>
+<c></c>
+<c></c>
+<c>* --- 2. 模板创建：ship to ---</c>
+<l>read_shape_model ('../模板文件/ShipTo_Model3.shm', ModelID_3)</l>
+<l>read_shape_model ('../模板文件/ShipTo_Model_fed.shm', ModelID_fed)</l>
+<l>read_ocr_class_mlp ('Document_0-9A-Z_NoRej.omc', OCRHandle)</l>
+<c></c>
+<l>get_shape_model_contours (ModelContours_3, ModelID_3, 1)</l>
+<l>get_shape_model_contours (ModelContours_fed, ModelID_fed, 1)</l>
+<c></c>
+<c>* 两个模板各自的最低匹配分数</c>
+<l>MinScore3 := 0.80</l>
+<l>MinScoreFed := 0.80</l>
+<c></c>
+<c>* 统一结果变量</c>
+<l>UseFed := 0</l>
+<l>ModelName := ''</l>
+<l>RowUsed := []</l>
+<l>ColumnUsed := []</l>
+<l>AngleUsed := []</l>
+<l>ScaleUsed := []</l>
+<l>ScoreUsed := []</l>
+<c></c>
+<l>dev_display (ImageReduced)</l>
+<l>disp_message (WindowHandle, '先匹配主模板 ShipTo_Model3...', 'window', 12, 12, 'black', 'true')</l>
+<c></c>
+<c>* 先用主模板匹配</c>
+<l>find_scaled_shape_model (ImageReduced, ModelID_3, rad(0), rad(360), 0.52, 1.0, 0.7, 0, 0.54, 'least_squares', 0, MinScore3, Row3, Column3, Angle3, Scale3, Score3)</l>
+<c></c>
+<l>if (|Score3| &gt; 0)</l>
+<l>    RowUsed := Row3</l>
+<l>    ColumnUsed := Column3</l>
+<l>    AngleUsed := Angle3</l>
+<l>    ScaleUsed := Scale3</l>
+<l>    ScoreUsed := Score3</l>
+<l>    UseFed := 0</l>
+<l>    ModelName := 'Model3'</l>
+<l>else</l>
+<c>    * 主模板没找到，再尝试备用模板</c>
+<l>    disp_message (WindowHandle, 'Model3未找到，切换到 ShipTo_Model_fed...', 'window', 40, 12, 'blue', 'true')</l>
+<c>    </c>
+<l>    find_scaled_shape_model (ImageReduced, ModelID_fed, rad(0), rad(360), 0.52, 1.0, 0.7, 0, 0.54, 'least_squares', 0, MinScoreFed, RowFed, ColumnFed, AngleFed, ScaleFed, ScoreFed)</l>
+<c>    </c>
+<l>    if (|ScoreFed| &gt; 0)</l>
+<l>        RowUsed := RowFed</l>
+<l>        ColumnUsed := ColumnFed</l>
+<l>        AngleUsed := AngleFed</l>
+<l>        ScaleUsed := ScaleFed</l>
+<l>        ScoreUsed := ScoreFed</l>
+<l>        UseFed := 1</l>
+<l>        ModelName := 'FED'</l>
+<l>    endif</l>
+<l>endif</l>
+<c></c>
+<l>dev_display (ImageReduced)</l>
+<l>dev_set_color ('green')</l>
+<l>dev_set_line_width (2)</l>
+<c></c>
+<c>* 循环处理最终选中的模板结果</c>
+<l>for i := 0 to |ScoreUsed|-1 by 1</l>
+<c>    </c>
+<c>    * 1. 显示模板轮廓</c>
+<l>    hom_mat2d_identity (HomMat2DIdentity)</l>
+<l>    hom_mat2d_translate (HomMat2DIdentity, RowUsed[i], ColumnUsed[i], HomMat2DTranslate)</l>
+<l>    hom_mat2d_rotate (HomMat2DTranslate, AngleUsed[i], RowUsed[i], ColumnUsed[i], HomMat2DRotate)</l>
+<l>    hom_mat2d_scale (HomMat2DRotate, ScaleUsed[i], ScaleUsed[i], RowUsed[i], ColumnUsed[i], HomMat2DScale)</l>
+<c></c>
+<l>    if (UseFed == 0)</l>
+<l>        affine_trans_contour_xld (ModelContours_3, ContoursAffineTrans, HomMat2DScale)</l>
+<c></c>
+<c>        * ===============================</c>
+<c>        * ShipTo_Model3 对应的 OCR 框参数</c>
+<c>        * ===============================</c>
+<l>        OffsetX := 180</l>
+<l>        OffsetY := 10</l>
+<l>        OCRHalfLen1 := 150</l>
+<l>        OCRHalfLen2 := 40</l>
+<l>        AngleOCR := AngleUsed[i] - rad(90)</l>
+<l>    else</l>
+<l>        affine_trans_contour_xld (ModelContours_fed, ContoursAffineTrans, HomMat2DScale)</l>
+<c></c>
+<c>        * ===============================</c>
+<c>        * ShipTo_Model_fed 对应的 OCR 框参数</c>
+<c>        * 这里你要按 fed 模板的位置继续微调</c>
+<c>        * ===============================</c>
+<l>        OffsetX := -310</l>
+<l>        OffsetY := -135</l>
+<l>        OCRHalfLen1 := 140</l>
+<l>        OCRHalfLen2 := 80</l>
+<l>        AngleOCR := AngleUsed[i] + rad(78)</l>
+<c>        * 如果 fed 模板对应文字方向不同，就改这一行的角度</c>
+<l>    endif</l>
+<c></c>
+<l>    dev_display (ContoursAffineTrans)</l>
+<c></c>
+<c>    * 2. 根据不同模板，生成不同位置的 OCR 矩形框</c>
+<l>    RowOCR := RowUsed[i] - sin(AngleOCR) * OffsetX + cos(AngleOCR) * OffsetY</l>
+<l>    ColOCR := ColumnUsed[i] + cos(AngleOCR) * OffsetX + sin(AngleOCR) * OffsetY</l>
+<c></c>
+<l>    gen_rectangle2 (ROI_OCR, RowOCR, ColOCR, AngleOCR, OCRHalfLen1, OCRHalfLen2)</l>
+<l>    dev_set_color ('yellow')</l>
+<l>    dev_display (ROI_OCR)</l>
+<c></c>
+<c>    * 3. OCR 区域摆正并裁剪</c>
+<l>    vector_angle_to_rigid (RowOCR, ColOCR, AngleOCR, RowOCR, ColOCR, 0, HomMat2D_OCR)</l>
+<l>    affine_trans_image (ImageReduced, ImageStraightened, HomMat2D_OCR, 'constant', 'false')</l>
+<l>    affine_trans_region (ROI_OCR, RegionOCRStraightened, HomMat2D_OCR, 'nearest_neighbor')</l>
+<c></c>
+<l>    reduce_domain (ImageStraightened, RegionOCRStraightened, ImageOCR_ROI)</l>
+<l>    crop_domain (ImageOCR_ROI, ImageOCR_Final)</l>
+<c></c>
+<c>    * 4. 文字分割与 OCR 识别</c>
+<l>    emphasize (ImageOCR_Final, ImageOCREnhanced, 7, 7, 1.5)</l>
+<l>    mean_image (ImageOCREnhanced, ImageMean, 21, 21)</l>
+<l>    dyn_threshold (ImageOCREnhanced, ImageMean, RegionText, 15, 'dark')</l>
+<c></c>
+<l>    connection (RegionText, ConnectedChars)</l>
+<l>    select_shape (ConnectedChars, SelectedChars, ['area','height'], 'and', [20, 10], [1000, 150])</l>
+<l>    sort_region (SelectedChars, SortedChars, 'character', 'true', 'row')</l>
+<c></c>
+<l>    do_ocr_multi_class_mlp (SortedChars, ImageOCR_Final, OCRHandle, Class, Confidence)</l>
+<c></c>
+<c>    * 先保留你原来的字符串输出方式</c>
+<l>    tuple_sum (Class, FinalString)</l>
+<c></c>
+<c>    * 5. 输出结果</c>
+<l>    disp_message (WindowHandle, '模板: ' + ModelName + '  Score: ' + ScoreUsed[i]$'.2f', 'image', RowUsed[i], ColumnUsed[i] + 20, 'green', 'false')</l>
+<l>    disp_message (WindowHandle, '提取信息: ' + FinalString, 'window', 60, 12, 'green', 'true')</l>
+<l>endfor</l>
+<c></c>
+<l>if (|ScoreUsed| == 0)</l>
+<l>    disp_message (WindowHandle, '两个模板都未找到匹配项！', 'window', 40, 12, 'red', 'true')</l>
+<l>endif</l>
+<c></c>
+<l>clear_shape_model (ModelID_3)</l>
+<l>clear_shape_model (ModelID_fed)</l>
+<l>clear_ocr_class_mlp (OCRHandle)</l>
+</body>
+<docu id="main">
+<parameters/>
+</docu>
+</procedure>
+</hdevelop>

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hdevelop file_version="1.2" halcon_version="21.11.0.0">
+<procedure name="main">
+<interface/>
+<body>
+<l>dev_close_window ()</l>
+<l>dev_update_off ()</l>
+<l>read_image (Image2, '../数据集/Test5.jpg')</l>
+<l>get_image_size (Image2, Width, Height)</l>
+<l>dev_open_window (0, 0, Width/8, Height/8, 'black', WindowHandle)</l>
+<l>set_display_font (WindowHandle, 16, 'mono', 'true', 'false')</l>
+<c></c>
+<l>median_image (Image2, ImageMedian, 'circle', 1, 'mirrored')</l>
+<c>*中值滤波</c>
+<c></c>
+<l>MaskSize := 7</l>
+<l>gray_erosion_rect (ImageMedian, ImageErosion, MaskSize, MaskSize)</l>
+<c></c>
+<l>sub_image (ImageMedian, ImageErosion, ImageDifference, 1, 0)</l>
+<l>emphasize (ImageDifference, ImageDiffEmphasize, 7, 7, 1.5)</l>
+<l>threshold (ImageDiffEmphasize, EdgeRegionPixel, 30, 255)</l>
+<l>closing_circle (EdgeRegionPixel, RegionClosing, 3.5)</l>
+<l>fill_up (RegionClosing, RegionFillUp)</l>
+<c>* ==========================================================</c>
+<c>* 新增：形态学断开粘连 (打断错误连接)</c>
+<c>* ==========================================================</c>
+<c>* 1. 设定腐蚀半径。这个值需要大于粘连“桥梁”的一半宽度。</c>
+<c>* 建议从 5 开始调试，如果还没断开就加大，比如 10.5 或 15.5</c>
+<l>BreakRadius := 8.5</l>
+<l>erosion_circle (RegionFillUp, RegionErosion, BreakRadius)</l>
+<c></c>
+<c>* 2. 重新连通：此时原本粘连的区域应该已经各自独立了</c>
+<l>connection (RegionErosion, ConnectedRegions)</l>
+<c></c>
+<c>* 3. 双重特征筛选：面积 + 矩形度 (极其关键的优化)</c>
+<c>* 矩形度越接近 1，说明越像一个标准的矩形。通常快递单的矩形度在 0.7 以上。</c>
+<c>* 这样可以完美过滤掉那些虽然面积够大，但是形状奇形怪状的废块。</c>
+<l>select_shape (ConnectedRegions, SelectedRegions1, 'area', 'and', 298387, 1.26114e+06)</l>
+<c></c>
+<c></c>
+<c>* 4. 膨胀恢复：将筛选出的正确区域恢复其真实大小</c>
+<l>dilation_circle (SelectedRegions1, RegionDilation, BreakRadius)</l>
+<c></c>
+<l>area_center (ConnectedRegions, AreaTuple, RowCenter, ColumnCenter)</l>
+<c></c>
+<c>* ==========================================================</c>
+<l>get_domain (Image2, ImageDomain)</l>
+<c></c>
+<c>* 后续的拟合与显示</c>
+<c>* ==========================================================</c>
+<c>* 注意：这里要使用恢复大小后的 RegionDilation 进行合并与拟合</c>
+<l>union1 (RegionDilation, RegionUnion)</l>
+<l>smallest_rectangle2 (RegionUnion, Row, Column, Phi, Length1, Length2)</l>
+<c></c>
+<c>* 根据计算出的参数，生成一个真实的矩形区域</c>
+<l>gen_rectangle2 (BoundingBox, Row, Column, Phi, Length1, Length2)</l>
+<c></c>
+<c>* 可视化查看效果</c>
+<l>dev_set_color ('green')</l>
+<l>dev_set_draw ('margin')</l>
+<l>dev_display (Image2)</l>
+<l>dev_display (BoundingBox)</l>
+<c>*picture 9 or 1</c>
+<l>*reduce_domain (ImageDiffEmphasize, BoundingBox, ImageReduced)</l>
+<c>* ==========================================</c>
+<c>* 在你的主程序提取出 ImageSearch 之后</c>
+<c>* ==========================================</c>
+<l>reduce_domain (Image2, BoundingBox, ImageSearch)</l>
+<c></c>
+<c>* 建议使用 crop_domain 把外围的黑边彻底裁掉，只保留标签本身的尺寸</c>
+<l>crop_domain (ImageSearch, ImageSearchCropped)</l>
+<c></c>
+<c>* 【关键代码】将这张完美的标签图保存到硬盘</c>
+<c>* 注意：强烈建议保存为 'tiff' 或 'bmp' 这种无损格式，不要存 'jpeg'，以免压缩产生噪点影响模板质量。</c>
+<l>write_image (ImageSearchCropped, 'tiff', 0, '../预处理ROI区域/Label_Template_Source_fed.tif')</l>
+<c></c>
+<l>disp_message (WindowHandle, '完美的标签图已保存，可以去制作模板了！', 'window', 60, 12, 'green', 'true')</l>
+</body>
+<docu id="main">
+<parameters/>
+</docu>
+</procedure>
+</hdevelop>

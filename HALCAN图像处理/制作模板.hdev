@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hdevelop file_version="1.2" halcon_version="21.11.0.0">
+<procedure name="main">
+<interface/>
+<body>
+<l>dev_close_window ()</l>
+<l>dev_update_off ()</l>
+<c></c>
+<c>* 1. 读取你刚刚在主程序里保存下来的无损标签图</c>
+<l>read_image (ImageTemplate, '../预处理ROI区域/Label_Template_Source_fed.tif')</l>
+<l>get_image_size (ImageTemplate, Width, Height)</l>
+<l>dev_open_window (0, 0, Width/2, Height/2, 'black', WindowHandle)</l>
+<l>dev_display (ImageTemplate)</l>
+<c></c>
+<c>* 2. 交互式截取 ROI (鼠标操作)</c>
+<l>disp_message (WindowHandle, '请用鼠标精准框选 "SHIP TO" 字母区域', 'window', 12, 12, 'black', 'true')</l>
+<l>disp_message (WindowHandle, '选好后【点击鼠标右键】确认', 'window', 40, 12, 'blue', 'true')</l>
+<c></c>
+<c>* 程序运行到这里会暂停，等待你在图像上画一个矩形框，画完右键确认</c>
+<l>draw_rectangle1 (WindowHandle, Row1, Column1, Row2, Column2)</l>
+<c></c>
+<c>* 3. 抠出你框选的字母图像</c>
+<l>gen_rectangle1 (TemplateRegion, Row1, Column1, Row2, Column2)</l>
+<l>reduce_domain (ImageTemplate, TemplateRegion, ImageROI)</l>
+<c></c>
+<c>* 4. 创建可缩放的形状模板</c>
+<c>* 这里的参数决定了模板的宽容度，ScaleMin 0.4 到 ScaleMax 1.0 表示允许尺寸缩小到 40%</c>
+<l>create_scaled_shape_model (ImageROI, 'auto', rad(0), rad(360), 'auto', 0.4, 1.0, 'auto', 'auto', 'use_polarity', 'auto', 'auto', ModelID)</l>
+<c></c>
+<c>* 5. 保存模板文件 (.shm)</c>
+<l>write_shape_model (ModelID, '../模板文件/ShipTo_Model_fed.shm')</l>
+<c></c>
+<c>* 6. 清理内存</c>
+<l>clear_shape_model (ModelID)</l>
+<l>disp_message (WindowHandle, '太棒了！ShipTo_Model.shm 模板文件已生成在桌面！', 'window', 80, 12, 'green', 'true')</l>
+</body>
+<docu id="main">
+<parameters/>
+</docu>
+</procedure>
+</hdevelop>
