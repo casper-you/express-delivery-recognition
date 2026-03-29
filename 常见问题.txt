@@ -1,0 +1,9 @@
+1.如日志报错“错误：模板未加载完整，无法识别！”
+一般为模板的路径问题
+打开你模板文件的文件夹查看路径为：C:\Users\1\Desktop\express-delivery-recognition-main\express-delivery-recognition\模板文件
+打开C#的代码
+private void InitHalconModels()函数
+把读取文件的路径进行更改
+string modelPath3 = @"C:/Users/1/Desktop/Express Delivery Recognition  in halcan/模板文件/ShipTo_Model3.shm";
+string modelPathFed = @"C:/Users/1/Desktop/Express Delivery Recognition  in halcan/模板文件/ShipTo_Model_fed.shm";
+就可以解决找不到模板文件的问题
